@@ -14,10 +14,10 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
             "povray",
             f"+W{width}",
             f"+H{height}",
-            "+FN",
+            "+FN",  # ?
             f"+O{output_file}",
-            "-D",
-            "+UA",
+            "-D",  # don't display anything
+            "+UA",  # output alpha
             f"+A{'0.3' if antialias else ''}",
             str(scene_file),
         ]
