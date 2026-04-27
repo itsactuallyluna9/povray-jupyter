@@ -46,7 +46,7 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
             ):
                 warnings.warn(f"POV-Ray warning: {line.strip()}", UserWarning)
 
-        if result.returncode != 0:
+        if result.returncode != 0 or not output_file.exists():
             error_msg = f"POV-Ray failed with return code {result.returncode}."
             if result.stderr:
                 error_msg += f" stderr: {result.stderr.strip()}"
