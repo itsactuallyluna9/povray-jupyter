@@ -1,6 +1,10 @@
 import io
 
-from povray_jupyter.exceptions import POVRayNotFoundError, POVRaySyntaxError, POVRayWarning
+from povray_jupyter.exceptions import (
+    POVRayNotFoundError,
+    POVRaySyntaxError,
+    POVRayWarning,
+)
 import pytest
 from conftest import needs_povray
 from PIL import Image

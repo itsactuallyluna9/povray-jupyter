@@ -5,10 +5,18 @@ import warnings
 from pathlib import Path
 import re
 
-from povray_jupyter.exceptions import POVRayNotFoundError, POVRayRuntimeError, POVRaySyntaxError, POVRaySyntaxWarning, POVRayWarning
+from povray_jupyter.exceptions import (
+    POVRayNotFoundError,
+    POVRayRuntimeError,
+    POVRaySyntaxError,
+    POVRayWarning,
+)
 
 
 def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
+    """
+    Render a POV-Ray scene from an SDL string and return the resulting image data (as a PNG) as bytes.
+    """
     with tempfile.TemporaryDirectory(prefix="jupyter-povray") as tempdir:
         scene_file = Path(tempdir) / "scene.pov"
         output_file = Path(tempdir) / "output.png"
@@ -31,7 +39,9 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
             result = subprocess.run(cmd, capture_output=True, text=True, check=False)
         except FileNotFoundError:
             # povray executable not found in PATH
-            raise POVRayNotFoundError("POV-Ray failed: povray executable not found in PATH")
+            raise POVRayNotFoundError(
+                "POV-Ray failed: povray executable not found in PATH"
+            )
 
         # check for warnings in output and issue them
         full_output = result.stdout + result.stderr
@@ -69,7 +79,11 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
                 # found instead
                 # Fatal error in parser: Cannot parse input
 
-                parse_error_match = re.search(r"File[: ]\s*['\"]?(.+?)['\"]?\s*line[: ]\s*(\d+)", full_output, re.IGNORECASE)
+                parse_error_match = re.search(
+                    r"File[: ]\s*['\"]?(.+?)['\"]?\s*line[: ]\s*(\d+)",
+                    full_output,
+                    re.IGNORECASE,
+                )
                 if parse_error_match:
                     error_file = parse_error_match.group(1)
                     error_line = int(parse_error_match.group(2))
@@ -81,7 +95,7 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
                     error = POVRaySyntaxError(error_msg)
                     error.filename = error_file
                     error.lineno = error_line
-                    error.text = scene_file.read_text().splitlines()[error_line - 1] 
+                    error.text = scene_file.read_text().splitlines()[error_line - 1]
                     raise error
             else:
                 error_msg = f"POV-Ray failed with return code {result.returncode} - check the stderr and stdout for details."
@@ -93,10 +107,13 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
 
         return output_file.read_bytes()
 
-def render_pov_animation(sdl: str, frames=60, infinite=False, **kwargs) -> Iterable[bytes]:
+
+def render_pov_animation(
+    sdl: str, frames=60, infinite=False, **kwargs
+) -> Iterable[bytes]:
     """
     Render an animation using POV-Ray's built-in animation features.
-    
+
     This will set the CLOCK variable to 0.0, and then increment it up to 1.0 across the specified number of frames.
 
     Please see the POV-Ray documentation for details on how to use the CLOCK variable to create animations:
@@ -108,6 +125,7 @@ def render_pov_animation(sdl: str, frames=60, infinite=False, **kwargs) -> Itera
     - infinite: If True, the animation's frames will be setup to loop infinitely.
     """
     raise NotImplementedError("Animation rendering is not yet implemented.")
+
 
 def render_py_animation(func, frames=60, infinite=False) -> Iterable[bytes]:
     """
