@@ -1,6 +1,6 @@
 [project]
 name = "povray-jupyter"
-version = "0.1.0"
+version = "0.2.0"
 description = "POV-Ray rendering for Jupyter notebooks"
 readme = "README.md"
 authors = [
@@ -9,6 +9,7 @@ authors = [
 requires-python = ">=3.10"
 dependencies = [
     "ipython>=8.39.0",
+    "ipywidgets>=8.1.8",
 ]
 
 [build-system]

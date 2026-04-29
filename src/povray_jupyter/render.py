@@ -1,10 +1,13 @@
 from itertools import count
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import tempfile
 from typing import Iterable
 import warnings
 from pathlib import Path
 import re
+from queue import Queue
+from threading import Thread
 
 from povray_jupyter.animation_utils import povray_clock
 from povray_jupyter.exceptions import (
@@ -15,7 +18,7 @@ from povray_jupyter.exceptions import (
 )
 
 
-def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
+def render_sdl(sdl: str, width=800, height=600, antialias=True) -> bytes:
     """
     Render a POV-Ray scene from an SDL string and return the resulting image data (as a PNG) as bytes.
     """
@@ -130,7 +133,56 @@ def render_pov_animation(
     raise NotImplementedError("Animation rendering is not yet implemented.")
 
 
-def render_py_animation(func, frames=60, infinite=False, **kwargs) -> Iterable[bytes]:
+def _iter_animation_sdls(func, frames, infinite=False):
+    queue = Queue(maxsize=1)
+    done_sentinel = object()
+
+    def produce_sdls():
+        try:
+            if frames == 0:
+                # call repeatedly until func returns None
+                for i in count(0):
+                    sdl = func(i)
+                    if sdl is None:
+                        break
+                    queue.put(("frame", sdl))
+            else:
+                for i in povray_clock(frames, cyclic=infinite):
+                    sdl = func(i)
+                    if sdl is None:
+                        raise ValueError(
+                            f"Function returned None at time {i}, but frames is set to {frames}. If you want the function to control the duration of the animation, set frames=0."
+                        )
+                    queue.put(("frame", sdl))
+        except BaseException as exc:
+            queue.put(("error", exc))
+        else:
+            queue.put(("done", done_sentinel))
+
+    Thread(target=produce_sdls, daemon=True).start()
+
+    while True:
+        kind, payload = queue.get()
+        if kind == "frame":
+            yield payload
+        elif kind == "error":
+            raise payload.with_traceback(payload.__traceback__)
+        else:
+            break
+
+
+def _render_animation_sdls(sdls, concurrent_povray=1, **kwargs):
+    if concurrent_povray > 1:
+        with ThreadPoolExecutor(max_workers=concurrent_povray) as executor:
+            rendered_frames = [executor.submit(render_sdl, sdl, **kwargs) for sdl in sdls]
+            for rendered_frame in rendered_frames:
+                yield rendered_frame.result()
+    else:
+        for sdl in sdls:
+            yield render_sdl(sdl, **kwargs)
+
+
+def render_py_animation(func, frames=60, infinite=False, concurrent_povray=1, **kwargs) -> Iterable[bytes]:
     """
     Render an animation by calling a Python function that generates the SDL for each frame. The function should take a single argument (the current time/frame) and return the SDL string for that frame.
 
@@ -146,19 +198,8 @@ def render_py_animation(func, frames=60, infinite=False, **kwargs) -> Iterable[b
             to go from 0.0 to 1.0 across the animation) and returns an SDL string for that frame, or None to stop the animation (if frames=0).
       frames: The number of frames to render for the animation. If set to 0, the function will be called repeatedly with increasing time values until it returns None.
       infinite: If True, the generated frames will be setup to loop infinitely. (This assumes that the first and last frames are identical - if they are not, the animation will still loop but there may be a visible jump when it loops back to the start.)
+      concurrent_povray: The number of POV-Ray processes to run concurrently when rendering frames, which can speed up rendering in some cases.
+      **kwargs: Additional keyword arguments to pass to the render() function for each frame.
     """
-    if frames == 0:
-        # call repeatedly until func returns None
-        for i in count(0):
-            sdl = func(i)
-            if sdl is None:
-                break
-            yield render(sdl, **kwargs)
-    else:
-        for i in povray_clock(frames, cyclic=infinite):
-            sdl = func(i)
-            if sdl is None:
-                raise ValueError(
-                    f"Function returned None at time {i}, but frames is set to {frames}. If you want the function to control the duration of the animation, set frames=0."
-                )
-            yield render(sdl, **kwargs)
+    sdls = _iter_animation_sdls(func, frames, infinite=infinite)
+    yield from _render_animation_sdls(sdls, concurrent_povray=concurrent_povray, **kwargs)

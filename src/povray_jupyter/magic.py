@@ -2,7 +2,7 @@ from IPython.core.magic import Magics, magics_class, cell_magic
 from IPython.core.magic_arguments import argument, magic_arguments, parse_argstring
 from IPython.display import Image, display
 
-from .render import render
+from .render import render_sdl
 
 
 @magics_class
@@ -13,7 +13,7 @@ class PovRayMagics(Magics):
     @cell_magic
     def povray(self, line, cell):
         args = parse_argstring(self.povray, line)
-        png = render(cell, width=args.width, height=args.height)
+        png = render_sdl(cell, width=args.width, height=args.height)
         display_png(png)
 
 
