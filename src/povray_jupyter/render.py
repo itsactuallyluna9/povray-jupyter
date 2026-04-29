@@ -1,3 +1,4 @@
+from itertools import count
 import subprocess
 import tempfile
 from typing import Iterable
@@ -5,6 +6,7 @@ import warnings
 from pathlib import Path
 import re
 
+from povray_jupyter.animation_utils import povray_clock
 from povray_jupyter.exceptions import (
     POVRayNotFoundError,
     POVRayRuntimeError,
@@ -32,6 +34,7 @@ def render(sdl: str, width=800, height=600, antialias=True) -> bytes:
             "-D",  # don't display anything
             "+UA",  # output alpha
             f"+A{'0.3' if antialias else ''}",
+            "+WT20", # force enable multithreading with 20 threads
             str(scene_file),
         ]
 
@@ -120,22 +123,42 @@ def render_pov_animation(
     https://www.povray.org/documentation/3.7.0/r3_2.html#r3_2_1
 
     Arguments:
-    - sdl: The SDL string for the scene, which should use the CLOCK variable to create animation effects.
-    - frames: The number of frames to render for the animation.
-    - infinite: If True, the animation's frames will be setup to loop infinitely.
+      sdl: The SDL string for the scene, which should use the CLOCK variable to create animation effects.
+      frames: The number of frames to render for the animation.
+      infinite: If True, the animation's frames will be setup to loop infinitely. (This assumes that the first and last frames are identical - if they are not, the animation will still loop but there may be a visible jump when it loops back to the start.)
     """
     raise NotImplementedError("Animation rendering is not yet implemented.")
 
 
-def render_py_animation(func, frames=60, infinite=False) -> Iterable[bytes]:
+def render_py_animation(func, frames=60, infinite=False, **kwargs) -> Iterable[bytes]:
     """
     Render an animation by calling a Python function that generates the SDL for each frame. The function should take a single argument (the current time/frame) and return the SDL string for that frame.
 
     This will call the provided function with a time value that goes from 0.0 to 1.0 across the specified number of frames, and then render each frame using the render() function. This mirrors the behavior of render_pov_animation, but allows you to generate the SDL dynamically in Python rather than relying on POV-Ray's built-in animation features.
     For simplicity's sake, the CLOCK variable will also be set when using this function.
-    """
-    for frame in range(frames):
-        time = frame / (frames - 1) if frames > 1 else 0
-        sdl = func(time)
 
-    raise NotImplementedError("Animation rendering is not yet implemented.")
+    If infinite is True, the generated frames will be setup to loop infinitely. (This assumes that the first and last frames are identical - if they are not, the animation will still loop but there may be a visible jump when it loops back to the start.)
+
+    If frames is set to 0, this will keep calling the function with increasing time values until the function returns None, at which point it will stop rendering frames. In this mode, the function can control the duration of the animation by deciding when to return None. The time value will be the number of frames rendered.
+
+    Arguments:
+      func: A Python function that takes a single float argument (the current time/frame, normalized
+            to go from 0.0 to 1.0 across the animation) and returns an SDL string for that frame, or None to stop the animation (if frames=0).
+      frames: The number of frames to render for the animation. If set to 0, the function will be called repeatedly with increasing time values until it returns None.
+      infinite: If True, the generated frames will be setup to loop infinitely. (This assumes that the first and last frames are identical - if they are not, the animation will still loop but there may be a visible jump when it loops back to the start.)
+    """
+    if frames == 0:
+        # call repeatedly until func returns None
+        for i in count(0):
+            sdl = func(i)
+            if sdl is None:
+                break
+            yield render(sdl, **kwargs)
+    else:
+        for i in povray_clock(frames, cyclic=infinite):
+            sdl = func(i)
+            if sdl is None:
+                raise ValueError(
+                    f"Function returned None at time {i}, but frames is set to {frames}. If you want the function to control the duration of the animation, set frames=0."
+                )
+            yield render(sdl, **kwargs)
